@@ -21,7 +21,8 @@ fi
 
 # Запускаем обработчик контента и записываем вывод в лог
 echo "Запуск обработчика контента ($(date))" | tee -a "${LOG_FILE}"
-python content_processor.py --limit 10 2>&1 | tee -a "${LOG_FILE}"
+# При запуске по расписанию, обрабатываем статьи за последние 2 часа
+python content_processor_direct.py --limit 10 --hours 2 2>&1 | tee -a "${LOG_FILE}"
 
 # Проверяем статус выполнения
 if [ $? -eq 0 ]; then
