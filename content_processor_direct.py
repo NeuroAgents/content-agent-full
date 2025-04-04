@@ -56,6 +56,8 @@ class ProcessingResult:
     """Класс для хранения результатов обработки контента."""
     clean_content: Optional[str] = None
     rewritten_content: Optional[str] = None
+    translated_title: Optional[str] = None
+    translated_description: Optional[str] = None
     translated_content: Optional[str] = None
     success: bool = False
     error_message: Optional[str] = None
@@ -138,13 +140,29 @@ class ContentProcessor:
         {content}
         """
         
-        self.translate_prompt_template = """
+        self.translate_content_prompt_template = """
         Translate the following English article into Russian.
         Maintain the professional tone and ensure technical terms are translated appropriately.
         Preserve any HTML formatting present in the original text.
         
         English article:
         {content}
+        """
+        
+        self.translate_title_prompt_template = """
+        Translate the following English article title into Russian.
+        Maintain the professional tone and ensure technical terms are translated appropriately.
+        
+        English title:
+        {title}
+        """
+        
+        self.translate_description_prompt_template = """
+        Translate the following English article description into Russian.
+        Maintain the professional tone and ensure technical terms are translated appropriately.
+        
+        English description:
+        {description}
         """
     
     def get_unprocessed_articles(self, limit: int = 10, hours_ago: int = 24) -> List[Dict[str, Any]]:
@@ -224,7 +242,7 @@ class ContentProcessor:
             return None
         
         try:
-            prompt = self.translate_prompt_template.format(content=content)
+            prompt = self.translate_content_prompt_template.format(content=content)
             response = self.model.generate_content(prompt)
             
             if response.text:
@@ -234,17 +252,65 @@ class ContentProcessor:
             logger.error(f"Ошибка при переводе контента: {e}")
             raise
     
+    @retry_with_exponential_backoff(max_retries=3, initial_delay=10, max_delay=60)
+    def translate_title(self, title: str) -> Optional[str]:
+        """Перевод заголовка на русский язык с помощью Gemini API."""
+        if not title:
+            return None
+        
+        try:
+            prompt = self.translate_title_prompt_template.format(title=title)
+            response = self.model.generate_content(prompt)
+            
+            if response.text:
+                return response.text
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка при переводе заголовка: {e}")
+            raise
+    
+    @retry_with_exponential_backoff(max_retries=3, initial_delay=10, max_delay=60)
+    def translate_description(self, description: str) -> Optional[str]:
+        """Перевод описания на русский язык с помощью Gemini API."""
+        if not description:
+            return None
+        
+        try:
+            prompt = self.translate_description_prompt_template.format(description=description)
+            response = self.model.generate_content(prompt)
+            
+            if response.text:
+                return response.text
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка при переводе описания: {e}")
+            raise
+    
     def update_article(self, article_id: str, result: ProcessingResult) -> bool:
         """Обновление статьи в базе данных с обработанным контентом."""
         try:
+            # Создаем словарь для обновления
+            update_data = {
+                'updated_at': datetime.now().isoformat(),
+                'is_translated': True
+            }
+            
+            # Добавляем поля для обновления, только если они не None
+            if result.clean_content:
+                update_data['description'] = result.clean_content[:500]
+                
+            if result.translated_title:
+                update_data['title_ru'] = result.translated_title
+                
+            if result.translated_description:
+                update_data['description_ru'] = result.translated_description
+                
+            if result.translated_content:
+                update_data['content_ru'] = result.translated_content
+            
             # Обновляем запись в базе данных
             self.db_client.table('content_items') \
-                .update({
-                    'updated_at': datetime.now().isoformat(),
-                    'description': result.clean_content[:500] if result.clean_content else None,
-                    'content': result.translated_content,  # Сохраняем переведенный контент в поле content
-                    'is_translated': True
-                }) \
+                .update(update_data) \
                 .eq('id', article_id) \
                 .execute()
             
@@ -259,6 +325,7 @@ class ContentProcessor:
         article_id = article.get('id')
         title = article.get('title', 'Без названия')
         content = article.get('content')
+        description = article.get('description', '')
         
         logger.info(f"Обработка статьи: {title} (ID: {article_id})")
         
@@ -297,7 +364,24 @@ class ContentProcessor:
                     error_message=f"Не удалось переписать контент для статьи {article_id}"
                 )
             
-            # Шаг 3: Перевод контента
+            # Шаг 3: Перевод заголовка
+            logger.info(f"Перевод заголовка для статьи {article_id}")
+            try:
+                translated_title = self.translate_title(title)
+            except Exception as e:
+                logger.warning(f"Не удалось перевести заголовок для статьи {article_id}: {e}")
+                translated_title = None
+            
+            # Шаг 4: Перевод описания, если оно есть
+            translated_description = None
+            if description:
+                logger.info(f"Перевод описания для статьи {article_id}")
+                try:
+                    translated_description = self.translate_description(description)
+                except Exception as e:
+                    logger.warning(f"Не удалось перевести описание для статьи {article_id}: {e}")
+            
+            # Шаг 5: Перевод контента
             logger.info(f"Перевод контента для статьи {article_id}")
             try:
                 translated_content = self.translate_content(rewritten_content)
@@ -305,6 +389,8 @@ class ContentProcessor:
                 return ProcessingResult(
                     clean_content=clean_content,
                     rewritten_content=rewritten_content,
+                    translated_title=translated_title,
+                    translated_description=translated_description,
                     success=False, 
                     error_message=f"Не удалось перевести контент для статьи {article_id}: {e}"
                 )
@@ -312,6 +398,8 @@ class ContentProcessor:
             return ProcessingResult(
                 clean_content=clean_content,
                 rewritten_content=rewritten_content,
+                translated_title=translated_title,
+                translated_description=translated_description,
                 translated_content=translated_content,
                 success=bool(translated_content)
             )
@@ -322,8 +410,31 @@ class ContentProcessor:
                 error_message=f"Ошибка при обработке статьи {article_id}: {e}"
             )
     
+    def check_translation_fields_exist(self) -> bool:
+        """Проверка наличия необходимых полей в таблице content_items."""
+        try:
+            # Выполняем запрос, который попытается получить одну строку с полем title_ru
+            query = "SELECT title_ru FROM content_items LIMIT 1"
+            response = self.db_client.rpc('execute_sql', {'query': query})
+            
+            # Если запрос выполнен без ошибок, значит поле существует
+            logger.info("Поля для переводов существуют в базе данных")
+            return True
+        except Exception as e:
+            # Если возникла ошибка, значит поля может не быть
+            logger.warning(f"Ошибка при проверке полей для переводов: {e}")
+            logger.warning("Необходимо выполнить миграцию для добавления полей переводов")
+            return False
+    
     def run(self, limit: int = 5, hours_ago: int = 24, dry_run: bool = False) -> Tuple[int, int]:
         """Основной метод для обработки статей."""
+        # Проверяем наличие необходимых полей в таблице
+        fields_exist = self.check_translation_fields_exist()
+        
+        if not fields_exist and not dry_run:
+            logger.error("Необходимые поля для переводов отсутствуют в базе данных. Пожалуйста, выполните миграцию.")
+            return (0, 0)
+        
         # Получаем необработанные статьи
         articles = self.get_unprocessed_articles(limit, hours_ago)
         
@@ -353,6 +464,9 @@ class ContentProcessor:
             else:
                 article_id = article.get('id')
                 logger.info(f"Режим dry run: статья {article_id} успешно обработана, но не обновлена в БД")
+                logger.info(f"Переведенный заголовок: {result.translated_title}")
+                logger.info(f"Переведенное описание: {result.translated_description[:100] if result.translated_description else 'Нет'}")
+                logger.info(f"Переведенный контент (первые 100 символов): {result.translated_content[:100] if result.translated_content else 'Нет'}")
                 success_count += 1
             
             # Небольшая задержка между запросами к API, чтобы избежать ограничений
