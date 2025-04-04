@@ -1,0 +1,6 @@
+name,url,parser_type,rss_url,selectors,active
+TechCrunch AI,https://techcrunch.com/category/artificial-intelligence/,rss,https://techcrunch.com/category/artificial-intelligence/feed/,,true
+AI News,https://www.artificialintelligence-news.com/,rss,https://www.artificialintelligence-news.com/news/feed/,,true
+Wired AI,https://www.wired.com/tag/artificial-intelligence/,rss,https://www.wired.com/feed/tag/artificial-intelligence/rss,,true
+MIT Technology Review,https://www.technologyreview.com/topic/artificial-intelligence/,html,,"{'list_item': 'article.card', 'title': 'h3', 'url': 'a.card-hed-link', 'description': 'div.card-description', 'date': 'time.card-date', 'author': 'span.card-author', 'content': 'div.article-main-component'}",true
+AI Agents Blog,https://example.com/ai-agents-blog,html,,"{'list_item': '.blog-post', 'title': 'h2.title', 'url': 'a.post-link', 'description': '.excerpt', 'date': '.post-date', 'author': '.author-name', 'content': 'article.post-content'}",false 
