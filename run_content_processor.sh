@@ -1,41 +1,39 @@
 #!/bin/bash
-# run_content_processor.sh - Скрипт для запуска обработчика контента по расписанию
+# Скрипт для запуска обработчика контента
 
-# Переменные
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-LOG_DIR="${SCRIPT_DIR}/logs"
-TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
-LOG_FILE="${LOG_DIR}/content_processor_${TIMESTAMP}.log"
+# Получаем директорию, в которой находится скрипт
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Создаем директорию для логов, если её нет
-mkdir -p "${LOG_DIR}"
+# Настройка логирования
+LOGS_DIR="$SCRIPT_DIR/logs"
+LOG_FILE="$LOGS_DIR/content_processor_$(date +%Y%m%d_%H%M%S).log"
 
-# Переходим в директорию скрипта
-cd "${SCRIPT_DIR}"
+# Создаем директорию для логов, если она не существует
+mkdir -p "$LOGS_DIR"
 
-# Проверяем наличие виртуального окружения
-if [ -d "venv" ]; then
-    echo "Активируем виртуальное окружение..."
-    source venv/bin/activate
+# Активируем виртуальное окружение, если оно существует
+if [ -d "$SCRIPT_DIR/venv" ]; then
+    source "$SCRIPT_DIR/venv/bin/activate"
+    echo "Виртуальное окружение активировано."
 fi
 
-# Запускаем обработчик контента и записываем вывод в лог
-echo "Запуск обработчика контента ($(date))" | tee -a "${LOG_FILE}"
-# При запуске по расписанию, обрабатываем статьи за последние 2 часа
-python content_processor_direct.py --limit 10 --hours 2 2>&1 | tee -a "${LOG_FILE}"
+# Запускаем обработчик контента
+echo "Запуск обработчика контента $(date)"
+echo "Логи сохраняются в $LOG_FILE"
+
+# Запускаем новую версию обработчика (v2), который сохраняет переводы в JSON-формате
+python "$SCRIPT_DIR/content_processor_v2.py" --limit 10 --hours 24 2>&1 | tee -a "$LOG_FILE"
 
 # Проверяем статус выполнения
-if [ $? -eq 0 ]; then
-    echo "Обработчик контента успешно завершил работу ($(date))" | tee -a "${LOG_FILE}"
-    EXIT_CODE=0
+STATUS=${PIPESTATUS[0]}
+if [ $STATUS -eq 0 ]; then
+    echo "Обработчик контента успешно завершил работу $(date)" | tee -a "$LOG_FILE"
 else
-    echo "Произошла ошибка при выполнении обработчика контента ($(date))" | tee -a "${LOG_FILE}"
-    EXIT_CODE=1
+    echo "Ошибка при выполнении обработчика контента, код: $STATUS $(date)" | tee -a "$LOG_FILE"
 fi
 
-# Если использовалось виртуальное окружение, деактивируем его
-if [ -d "venv" ]; then
+# Деактивируем виртуальное окружение, если оно было активировано
+if [ -d "$SCRIPT_DIR/venv" ]; then
     deactivate
-fi
-
-exit ${EXIT_CODE} 
+    echo "Виртуальное окружение деактивировано."
+fi 
