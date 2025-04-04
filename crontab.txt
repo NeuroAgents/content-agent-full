@@ -1,0 +1,15 @@
+# crontab.txt - Настройки планировщика для регулярного запуска обработчика контента
+
+# Формат: минута час день месяц день_недели команда
+# Запуск обработчика контента каждые 2 часа
+0 */2 * * * cd /path/to/content-agent && ./run_content_processor.sh >> /path/to/logs/cron.log 2>&1
+
+# Запуск синхронизации контента каждый час
+0 * * * * cd /path/to/content-agent && python load_content.py --limit 10 >> /path/to/logs/load_content.log 2>&1
+
+# Очистка логов старше 7 дней (запуск раз в день)
+0 0 * * * find /path/to/logs -type f -name "*.log" -mtime +7 -delete
+
+# Примечание: 
+# Перед установкой крон-задания замените /path/to/content-agent на реальный путь к директории проекта
+# Пример команды для установки: crontab crontab.txt 
